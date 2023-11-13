@@ -1,42 +1,27 @@
 import random
 import json as JSON
 
-def generateData(filename, count):
-    '''
-    [
-        {
-            "routes": {
-            "legs": {
-                "start_address": "5689 Del Sol Road",
-                "end_address": "069 Bunting Plaza",
-                "steps": [
-                    {"start_location": { "lat": 37.0862154, "lng": 127.0391832 },
-                    "end_location": { "lat": 43.368364, "lng": -1.7705346 },
-                    "distance": { "value": 879 },
-                    "duration": { "value": 9304 }
-                    }]
-                }
-            }
-        }
-    ]'''
+def generateData(filename, count, passenger=False):
     locations = ["A", "B", "C", "D", "E", "F", "G", "H"]
+    time = ["07:00:00", "08:00:00", "09:00:00", "19:00:00", "20:00:00"]
+    day = ["2023-10-01", "2023-11-02", "2023-11-03", "2023-11-04"]
     json = []
-    route = {"routes": {
-        "legs": {
-            "steps": []
-        }
-    }}
-
+    route = {"routes": {"legs": {"steps": []}}}
     for i in range(count):
-        route = {"routes": {
-            "legs": {
-                "steps": []
-            }
-        }}
-        length = random.randint(2, len(locations) - 2)  # 3
-        # steps = random.sample(locations, length)  # ['B', 'G', 'A']
-        steps = random.sample(locations, 2)  # ['B', 'G', 'A']
-        route["routes"]["legs"]["steps"] = steps
+        route = {"routes": {"legs": {"steps": []}}}
+        length = random.randint(2, len(locations) - 2)
+        
+        if passenger:
+            steps = random.sample(locations, 2)
+            pickupTime = f'{random.choice(["07","08","13","14","19","20"])}:{int(random.randint(0,59))}:00'
+            pickupTime = f'{random.randint(0,23)}:{int(random.randint(0,59))}:00'
+            pickupDay = random.choice(day)
+            time = f"{pickupDay} {pickupTime}"
+            route["time"] = time
+        else:
+            steps = random.sample(locations, length)
+        route["routes"] = steps
+        
         json.append(route)
     with open(filename, 'w') as file:
         JSON.dump(json, file)
@@ -46,21 +31,18 @@ def getRoutes(steps):
     rider_routes = loadJSON("riderRoutes.json")
     possible_routes = []
     for route in rider_routes:
-        rider_steps = route["routes"]["legs"]["steps"]
+        rider_steps = route["routes"]
         if checkRoute(steps, rider_steps):
             possible_routes.append(route)
-
     possible_routes = sorted(
-        possible_routes, key=lambda x: len(x["routes"]["legs"]["steps"]))
+        possible_routes, key=lambda x: len(x["routes"]))
     return possible_routes
 
 def checkRoute(steps, rider_steps):
     m, n = len(steps), len(rider_steps)
-
     for i in range(n - m + 1):
         if rider_steps[i:i + m] == steps:
             return True
-
     return False
 
 def loadJSON(filename):
@@ -70,55 +52,48 @@ def loadJSON(filename):
 
 def passengerFrequency():
     passenger_routes = loadJSON("passengerRoutes.json")
-    passenger_routes = [f'{x["routes"]["legs"]["steps"][0]},{x["routes"]["legs"]["steps"][1]}' for x in passenger_routes]
+    passenger_routes = [f'{x["routes"][0]},{x["routes"][1]}' for x in passenger_routes]
     passenger_routes_distinct = list(set(passenger_routes))
     s = ""
     for i in passenger_routes_distinct:
         s += f"{i.split(',')[0]}-{i.split(',')[1]},{passenger_routes.count(i)}\n"
     print(s)
-
     passenger_frequency = sorted([[i.split(","), passenger_routes.count(i)] for i in passenger_routes_distinct], key = lambda x : -x[1])
     s = ""
     for i in passenger_frequency:
         s += f"{i[0][0]}-{i[0][1]},{i[1]}\n"
     with open("passenger_frequency.csv", "w") as file:
         file.write(s)
-        
     return passenger_frequency
 
  
 def passengerFrequencyByClustering():
     from sklearn.cluster import KMeans
     from collections import Counter
-    
     data = loadJSON("passengerRoutes.json")
-    steps_data = [entry["routes"]["legs"]["steps"] for entry in data]
+    steps_data = [entry["routes"] for entry in data]
     demand = []
-
     steps_numerical = []
     for steps in steps_data:
         numerical_steps = [ord(step) - ord('A') for step in steps]
         steps_numerical.append(numerical_steps)
-
     kmeans = KMeans(n_clusters=5) 
     kmeans.fit(steps_numerical)
-
     cluster_labels = kmeans.labels_
-
     step_combination_counts = {}
-
     for cluster_id, steps in zip(cluster_labels, steps_data):
         combination = tuple(steps)
         if combination not in step_combination_counts:
             step_combination_counts[combination] = 1
         else:
             step_combination_counts[combination] += 1
-
     for combination, count in step_combination_counts.items():
         demand.append([combination, count])
-        
     demand = sorted(demand, key= lambda x: -x[1])
-        
+    print("\n")
+    for i in demand:
+        print(i)
+    print("\n")
     return demand
 
 def suggestRoute():
@@ -131,7 +106,7 @@ def suggestRoute():
     # Extract the steps (locations) from rider routes
     rider_steps = []
     for route in rider_routes:
-        steps = route["routes"]["legs"]["steps"]
+        steps = route["routes"]
         rider_steps.append(steps)
 
     # Define the number of passengers and the maximum number of stops
@@ -197,27 +172,31 @@ def suggestRoute():
         
         for i in range(len(suggested_route)):
             try:
-                suggested_route[i].remove(rider_routes[i]["routes"]["legs"]["steps"][0])
+                suggested_route[i].remove(rider_routes[i]["routes"][0])
             except:
                 pass
             try:
-                suggested_route[i].remove(rider_routes[i]["routes"]["legs"]["steps"][-1])
+                suggested_route[i].remove(rider_routes[i]["routes"][-1])
             except:
                 pass
         
         rider_routes = loadJSON("riderRoutes.json")
         for i in range(len(suggested_route)):
             # suggested_route[i] = list(set(suggested_route[i]))
-            suggested_route[i].insert(0, rider_routes[i]["routes"]["legs"]["steps"][0])
-            suggested_route[i].append(rider_routes[i]["routes"]["legs"]["steps"][-1])
+            suggested_route[i].insert(0, rider_routes[i]["routes"][0])
+            suggested_route[i].append(rider_routes[i]["routes"][-1])
             
         rider_routes = loadJSON("riderRoutes.json")
         return rider_routes, suggested_route
 
-demand = passengerFrequencyByClustering()
-suggested_routes = suggestRoute()
+# demand = passengerFrequencyByClustering()
+# suggested_routes = suggestRoute()
 
-print(f'Least Demand: {demand[-1][0][0]}->{demand[-1][0][1]}')
-print(f'Highest Demand: {demand[0][0][0]}->{demand[0][0][1]}')
-print('Current route:', suggested_routes[0][1]["routes"]["legs"]["steps"])
-print('Suggested route:', suggested_routes[1][1])
+# print("\n")
+# print(f'Least Demand: {demand[-1][0][0]}->{demand[-1][0][1]}')
+# print(f'Highest Demand: {demand[0][0][0]}->{demand[0][0][1]}')
+# print('Current route:', suggested_routes[0][1]["routes"])
+# print('Suggested route:', suggested_routes[1][1])
+# print("\n")
+
+generateData("passengerRoutes.json", 6000, True)
